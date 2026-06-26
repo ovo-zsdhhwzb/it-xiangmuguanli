@@ -4,6 +4,7 @@ const demoUsers=[
   {id:1,account:'admin',password:'123456',name:'超级管理员',role:'admin',level:'系统管理员',phone:'13800000000',status:'正常',locked:true},
   {id:2,account:'traveler',password:'123456',name:'林晓雪',role:'visitor',level:'星耀会员',phone:'13900000000',points:8620,trips:12,favorites:8,status:'正常'}
 ]
+
 const demoData={
   destinations:[
     {id:1,name:'西湖风景名胜区',city:'杭州',category:'自然风光',heat:98,score:4.9,price:0,status:'开放',tag:'人气必打卡',color:'#2dd4bf',desc:'一湖映双塔，山水与人文交织的江南名片。'},
@@ -24,6 +25,7 @@ const demoData={
 const clone=value=>JSON.parse(JSON.stringify(value))
 const readLocal=name=>JSON.parse(localStorage.getItem(`travel-cloud-${name}`)||'null')||clone(demoData[name]||[])
 const writeLocal=(name,data)=>localStorage.setItem(`travel-cloud-${name}`,JSON.stringify(data))
+
 const fallback={
   login(payload){
     const localUsers=JSON.parse(localStorage.getItem('travel-cloud-users-with-password')||'null')||clone(demoUsers)
@@ -38,8 +40,7 @@ const fallback={
     const user={id:Date.now(),account:payload.account,password:payload.password,name:payload.name||payload.account,phone:payload.phone||'',role:'visitor',level:'普通游客',points:0,trips:0,favorites:0,status:'正常'}
     localUsers.push(user)
     localStorage.setItem('travel-cloud-users-with-password',JSON.stringify(localUsers))
-    const publicUsers=localUsers.map(({password,...x})=>x)
-    writeLocal('users',publicUsers)
+    writeLocal('users',localUsers.map(({password,...x})=>x))
     const {password,...safe}=user
     return safe
   },
@@ -52,17 +53,20 @@ const fallback={
     return q?data.filter(x=>JSON.stringify(x).includes(q)):data
   },
   create(name,payload){
-    const data=readLocal(name),item={id:payload.id||Date.now(),...payload,createdAt:new Date().toLocaleString('zh-CN')}
+    const data=readLocal(name)
+    const item={id:payload.id||Date.now(),...payload,createdAt:new Date().toLocaleString('zh-CN')}
     data.unshift(item);writeLocal(name,data);return item
   },
   update(name,id,payload){
-    const data=readLocal(name),index=data.findIndex(x=>String(x.id)===String(id))
+    const data=readLocal(name)
+    const index=data.findIndex(x=>String(x.id)===String(id))
     if(index<0)throw new Error('数据不存在')
     data[index]={...data[index],...payload,updatedAt:new Date().toLocaleString('zh-CN')}
     writeLocal(name,data);return data[index]
   },
   remove(name,id){
-    const data=readLocal(name),index=data.findIndex(x=>String(x.id)===String(id))
+    const data=readLocal(name)
+    const index=data.findIndex(x=>String(x.id)===String(id))
     if(index<0)throw new Error('数据不存在')
     const removed=data.splice(index,1)[0]
     writeLocal(name,data);return removed
@@ -75,7 +79,7 @@ const request=async(path,options={})=>{
     headers:{'Content-Type':'application/json',...(options.headers||{})}
   })
   const contentType=response.headers.get('content-type')||''
-  if(!contentType.includes('application/json'))throw new Error('云端 API 未启动，已切换演示数据')
+  if(!contentType.includes('application/json'))throw new Error('云端 API 未启动')
   const data=await response.json()
   if(!response.ok||data.code)throw new Error(data.message||'请求失败')
   return data.data
