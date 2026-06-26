@@ -52,7 +52,7 @@ const login=async()=>{
       <form class="login-card" @submit.prevent="login">
         <small>WELCOME BACK</small>
         <h2>登录云迹系统</h2>
-        <p>账号会通过 Node 后端进行验证</p>
+        <p>支持云端接口验证，Vercel 环境自动启用演示数据</p>
         <label>账号<input v-model.trim="account" autocomplete="username" placeholder="请输入账号"/></label>
         <label>密码<div class="password"><input v-model="password" type="password" autocomplete="current-password" placeholder="请输入密码"/><span>演示密码 123456</span></div></label>
         <div class="login-options"><el-checkbox>记住我</el-checkbox><a>忘记密码？</a></div>

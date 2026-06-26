@@ -1,4 +1,5 @@
 const API_BASE=import.meta.env.VITE_API_BASE||(import.meta.env.DEV?'/server-api':'/api')
+const isVercelStatic=typeof window!=='undefined'&&window.location.hostname.includes('vercel.app')&&!import.meta.env.VITE_API_BASE
 
 const demoUsers=[
   {id:1,account:'admin',password:'123456',name:'超级管理员',role:'admin',level:'系统管理员',phone:'13800000000',status:'正常',locked:true},
@@ -86,6 +87,7 @@ const request=async(path,options={})=>{
 }
 
 const safe=async(remote,local)=>{
+  if(isVercelStatic)return local()
   try{return await remote()}catch(error){
     console.warn('[TravelSpark API fallback]',error.message)
     return local()
