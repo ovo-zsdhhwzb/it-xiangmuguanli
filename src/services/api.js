@@ -1,5 +1,6 @@
-const API_BASE=import.meta.env.VITE_API_BASE||(import.meta.env.DEV?'/server-api':'/api')
-const isVercelStatic=typeof window!=='undefined'&&window.location.hostname.includes('vercel.app')&&!import.meta.env.VITE_API_BASE
+const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const USE_SUPABASE=Boolean(SUPABASE_URL&&SUPABASE_KEY)
 
 const demoUsers=[
   {id:1,account:'admin',password:'123456',name:'超级管理员',role:'admin',level:'系统管理员',phone:'13800000000',status:'正常',locked:true},
@@ -23,17 +24,79 @@ const demoData={
   apiLogs:[]
 }
 
+const tableMap={users:'users',destinations:'destinations',orders:'orders',trips:'trips',profiles:'profiles',apiLogs:'apiLogs'}
 const clone=value=>JSON.parse(JSON.stringify(value))
 const readLocal=name=>JSON.parse(localStorage.getItem(`travel-cloud-${name}`)||'null')||clone(demoData[name]||[])
 const writeLocal=(name,data)=>localStorage.setItem(`travel-cloud-${name}`,JSON.stringify(data))
+const toDestination=row=>({...row,desc:row.description??row.desc??''})
+const fromDestination=item=>{const {desc,...rest}=item;return {...rest,description:item.description??desc??''}}
+const toOrder=row=>({...row,orderNo:row.order_no??row.orderNo,user:row.user_name??row.user})
+const fromOrder=item=>{const {orderNo,user,...rest}=item;return {...rest,order_no:item.order_no??orderNo,user_name:item.user_name??user}}
+const normalizeIn=(name,item)=>name==='destinations'?fromDestination(item):name==='orders'?fromOrder(item):item
+const normalizeOut=(name,item)=>name==='destinations'?toDestination(item):name==='orders'?toOrder(item):item
+const publicUser=user=>{const {password,...safe}=user;return safe}
+
+async function supabaseFetch(path,options={}){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1${path}`,{
+    ...options,
+    headers:{
+      apikey:SUPABASE_KEY,
+      Authorization:`Bearer ${SUPABASE_KEY}`,
+      'Content-Type':'application/json',
+      Prefer:'return=representation',
+      ...(options.headers||{})
+    }
+  })
+  if(!response.ok)throw new Error(await response.text())
+  if(response.status===204)return null
+  return response.json()
+}
+
+const cloud={
+  async login(payload){
+    const rows=await supabaseFetch(`/users?account=eq.${encodeURIComponent(payload.account)}&password=eq.${encodeURIComponent(payload.password)}&limit=1`)
+    const user=rows?.[0]
+    if(!user)throw new Error('账号或密码错误')
+    return {token:`supabase-token-${Date.now()}`,user:publicUser(user)}
+  },
+  async register(payload){
+    const user={id:Date.now(),account:payload.account,password:payload.password,name:payload.name||payload.account,phone:payload.phone||'',role:'visitor',level:'普通游客',points:0,trips:0,favorites:0,status:'正常',locked:false}
+    const rows=await supabaseFetch('/users',{method:'POST',body:JSON.stringify(user)})
+    return publicUser(rows[0])
+  },
+  async list(name,q=''){
+    const table=tableMap[name]
+    let rows=await supabaseFetch(`/${table}?select=*`)
+    rows=(rows||[]).map(x=>normalizeOut(name,x))
+    return q?rows.filter(x=>JSON.stringify(x).includes(q)):rows
+  },
+  async create(name,payload){
+    const table=tableMap[name],body=normalizeIn(name,{id:payload.id||Date.now(),...payload})
+    const rows=await supabaseFetch(`/${table}`,{method:'POST',body:JSON.stringify(body)})
+    return normalizeOut(name,rows[0])
+  },
+  async update(name,id,payload){
+    const table=tableMap[name],body=normalizeIn(name,payload)
+    const rows=await supabaseFetch(`/${table}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)})
+    return normalizeOut(name,rows[0])
+  },
+  async remove(name,id){
+    const table=tableMap[name]
+    const rows=await supabaseFetch(`/${table}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE'})
+    return rows?.[0]||{id}
+  },
+  async stats(){
+    const [users,destinations,orders,trips]=await Promise.all([this.list('users'),this.list('destinations'),this.list('orders'),this.list('trips')])
+    return {users:users.length,visitors:users.filter(x=>x.role==='visitor').length,destinations:destinations.length,orders:orders.length,trips:trips.length,revenue:orders.reduce((s,x)=>s+Number(x.amount||0),0),hotCity:[...new Set(destinations.map(x=>x.city))].slice(0,6)}
+  }
+}
 
 const fallback={
   login(payload){
     const localUsers=JSON.parse(localStorage.getItem('travel-cloud-users-with-password')||'null')||clone(demoUsers)
     const user=localUsers.find(x=>x.account===payload.account&&x.password===payload.password)
     if(!user)throw new Error('账号或密码错误')
-    const {password,...safe}=user
-    return {token:`fallback-token-${Date.now()}`,user:safe}
+    return {token:`fallback-token-${Date.now()}`,user:publicUser(user)}
   },
   register(payload){
     const localUsers=JSON.parse(localStorage.getItem('travel-cloud-users-with-password')||'null')||clone(demoUsers)
@@ -41,66 +104,31 @@ const fallback={
     const user={id:Date.now(),account:payload.account,password:payload.password,name:payload.name||payload.account,phone:payload.phone||'',role:'visitor',level:'普通游客',points:0,trips:0,favorites:0,status:'正常'}
     localUsers.push(user)
     localStorage.setItem('travel-cloud-users-with-password',JSON.stringify(localUsers))
-    writeLocal('users',localUsers.map(({password,...x})=>x))
-    const {password,...safe}=user
-    return safe
+    writeLocal('users',localUsers.map(publicUser))
+    return publicUser(user)
   },
-  stats(){
-    const users=readLocal('users'),destinations=readLocal('destinations'),orders=readLocal('orders'),trips=readLocal('trips')
-    return {users:users.length,visitors:users.filter(x=>x.role==='visitor').length,destinations:destinations.length,orders:orders.length,trips:trips.length,revenue:orders.reduce((s,x)=>s+Number(x.amount||0),0),hotCity:[...new Set(destinations.map(x=>x.city))].slice(0,6)}
-  },
-  list(name,q=''){
-    const data=readLocal(name)
-    return q?data.filter(x=>JSON.stringify(x).includes(q)):data
-  },
-  create(name,payload){
-    const data=readLocal(name)
-    const item={id:payload.id||Date.now(),...payload,createdAt:new Date().toLocaleString('zh-CN')}
-    data.unshift(item);writeLocal(name,data);return item
-  },
-  update(name,id,payload){
-    const data=readLocal(name)
-    const index=data.findIndex(x=>String(x.id)===String(id))
-    if(index<0)throw new Error('数据不存在')
-    data[index]={...data[index],...payload,updatedAt:new Date().toLocaleString('zh-CN')}
-    writeLocal(name,data);return data[index]
-  },
-  remove(name,id){
-    const data=readLocal(name)
-    const index=data.findIndex(x=>String(x.id)===String(id))
-    if(index<0)throw new Error('数据不存在')
-    const removed=data.splice(index,1)[0]
-    writeLocal(name,data);return removed
-  }
-}
-
-const request=async(path,options={})=>{
-  const response=await fetch(`${API_BASE}${path}`,{
-    ...options,
-    headers:{'Content-Type':'application/json',...(options.headers||{})}
-  })
-  const contentType=response.headers.get('content-type')||''
-  if(!contentType.includes('application/json'))throw new Error('云端 API 未启动')
-  const data=await response.json()
-  if(!response.ok||data.code)throw new Error(data.message||'请求失败')
-  return data.data
+  list(name,q=''){const data=readLocal(name);return q?data.filter(x=>JSON.stringify(x).includes(q)):data},
+  create(name,payload){const data=readLocal(name),item={id:payload.id||Date.now(),...payload};data.unshift(item);writeLocal(name,data);return item},
+  update(name,id,payload){const data=readLocal(name),i=data.findIndex(x=>String(x.id)===String(id));if(i<0)throw new Error('数据不存在');data[i]={...data[i],...payload};writeLocal(name,data);return data[i]},
+  remove(name,id){const data=readLocal(name),i=data.findIndex(x=>String(x.id)===String(id));if(i<0)throw new Error('数据不存在');const removed=data.splice(i,1)[0];writeLocal(name,data);return removed},
+  stats(){const users=readLocal('users'),destinations=readLocal('destinations'),orders=readLocal('orders'),trips=readLocal('trips');return {users:users.length,visitors:users.filter(x=>x.role==='visitor').length,destinations:destinations.length,orders:orders.length,trips:trips.length,revenue:orders.reduce((s,x)=>s+Number(x.amount||0),0),hotCity:[...new Set(destinations.map(x=>x.city))].slice(0,6)}}
 }
 
 const safe=async(remote,local)=>{
-  if(isVercelStatic)return local()
+  if(!USE_SUPABASE)return local()
   try{return await remote()}catch(error){
-    console.warn('[TravelSpark API fallback]',error.message)
+    console.warn('[Supabase fallback]',error.message)
     return local()
   }
 }
 
 export const api={
-  base:API_BASE,
-  login:payload=>safe(()=>request('/auth/login',{method:'POST',body:JSON.stringify(payload)}),()=>fallback.login(payload)),
-  register:payload=>safe(()=>request('/auth/register',{method:'POST',body:JSON.stringify(payload)}),()=>fallback.register(payload)),
-  stats:()=>safe(()=>request('/stats'),()=>fallback.stats()),
-  list:(name,q='')=>safe(()=>request(`/${name}${q?`?q=${encodeURIComponent(q)}`:''}`),()=>fallback.list(name,q)),
-  create:(name,payload)=>safe(()=>request(`/${name}`,{method:'POST',body:JSON.stringify(payload)}),()=>fallback.create(name,payload)),
-  update:(name,id,payload)=>safe(()=>request(`/${name}/${id}`,{method:'PUT',body:JSON.stringify(payload)}),()=>fallback.update(name,id,payload)),
-  remove:(name,id)=>safe(()=>request(`/${name}/${id}`,{method:'DELETE'}),()=>fallback.remove(name,id))
+  base:USE_SUPABASE?SUPABASE_URL:'local-demo',
+  login:payload=>safe(()=>cloud.login(payload),()=>fallback.login(payload)),
+  register:payload=>safe(()=>cloud.register(payload),()=>fallback.register(payload)),
+  stats:()=>safe(()=>cloud.stats(),()=>fallback.stats()),
+  list:(name,q='')=>safe(()=>cloud.list(name,q),()=>fallback.list(name,q)),
+  create:(name,payload)=>safe(()=>cloud.create(name,payload),()=>fallback.create(name,payload)),
+  update:(name,id,payload)=>safe(()=>cloud.update(name,id,payload),()=>fallback.update(name,id,payload)),
+  remove:(name,id)=>safe(()=>cloud.remove(name,id),()=>fallback.remove(name,id))
 }
