@@ -1,0 +1,24 @@
+[
+  {
+    "id": 20260622001,
+    "orderNo": "YJ20260622001",
+    "user": "林晓雪",
+    "destination": "西湖风景名胜区",
+    "city": "杭州",
+    "amount": 2399,
+    "status": "待出行",
+    "people": 2,
+    "date": "2026-07-12"
+  },
+  {
+    "id": 20260622002,
+    "orderNo": "YJ20260622002",
+    "user": "陈一川",
+    "destination": "故宫博物院",
+    "city": "北京",
+    "amount": 560,
+    "status": "已完成",
+    "people": 3,
+    "date": "2026-06-18"
+  }
+]

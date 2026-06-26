@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1,
+    "account": "admin",
+    "password": "123456",
+    "name": "超级管理员",
+    "role": "admin",
+    "level": "系统管理员",
+    "phone": "13800000000",
+    "status": "正常",
+    "locked": true,
+    "createdAt": "2026-06-01 09:00:00"
+  },
+  {
+    "id": 2,
+    "account": "traveler",
+    "password": "123456",
+    "name": "林晓雪",
+    "role": "visitor",
+    "level": "星耀会员",
+    "phone": "13900000000",
+    "points": 8620,
+    "trips": 12,
+    "favorites": 8,
+    "status": "正常",
+    "createdAt": "2026-06-02 10:20:00"
+  }
+]
