@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "dev": "vite", "server": "node backend/server.js", "start": "node backend/server.js", "build": "vite build", "preview": "vite preview" },
+  "scripts": { "dev": "vite", "server": "node backend/server.js", "start": "vite preview --host 0.0.0.0", "build": "vite build", "preview": "vite preview" },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
     "echarts": "^5.6.0",
